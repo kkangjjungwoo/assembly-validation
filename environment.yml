@@ -1,0 +1,14 @@
+name: assembly-validation
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pythonocc-core=7.9.3
+  - pip:
+    - numpy
+    - tqdm
+    - trimesh[recommend]
+    - msgpack
+    - hydra-core
+    - git+https://github.com/AutodeskAILab/occwl.git
