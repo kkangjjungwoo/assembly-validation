@@ -1,4 +1,7 @@
 # Instructions
+## General
+1. 오류 발생 시 Fallback은 최소화하고 Exception을 발생시킬 것
+2. 함수 매개변수의 기본값 사용을 최소화할 것
 ## Naming Convention
 ### Variables
 General & Local Variable: 단일 알파벳 변수명(루프 인덱스 등은 제외) 및 축약 금지

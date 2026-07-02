@@ -1,4 +1,8 @@
 # Assembly Validation
+## Get Started
+```
+conda env create -f environment.yml
+```
 ## Code Structure
 ```
 ├── config/
@@ -15,4 +19,42 @@
 ├── visualization/
     ├── visualizer.py : result visualizer using PyVista or Open3D
 ├── main.py
+```
+## Output Structure
+```
+├── metadata
+    ├── step_path
+    ├── global_bbox
+├── solids
+    ├── 0
+        ├── mesh
+            ├── vertices
+            ├── faces
+        ├── state
+            ├── position
+            ├── rotation
+    ├── 1
+        ├── mesh
+            ├── vertices
+            ├── faces
+        ├── state
+            ├── position
+            ├── rotation
+├── trajectories
+    ├── 0
+        ├── solid
+        ├── state
+            ├── position
+            ├── rotation
+        ├── action
+            ├── type
+            ├── value
+    ├── 1
+        ├── solid
+        ├── state
+            ├── position
+            ├── rotation
+        ├── action
+            ├── type
+            ├── value
 ```
