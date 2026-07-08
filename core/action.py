@@ -33,8 +33,7 @@ class Action:
 
     action_type: ActionType
     # translation 이면 float 3-tuple, rotation 이면 int 3-tuple 로 정규화한다.
-    value: Tuple[float, float, float]
-
+    value: Tuple[float, float, float] | Tuple[int, int, int]
     def __post_init__(self) -> None:
         if not isinstance(self.action_type, ActionType):
             raise InvalidActionException(
