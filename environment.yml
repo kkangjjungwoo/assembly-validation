@@ -11,6 +11,7 @@ dependencies:
     - trimesh
     - manifold3d
     - scipy
+    - pyvista
     - msgpack
     - hydra-core
     - git+https://github.com/AutodeskAILab/occwl.git
