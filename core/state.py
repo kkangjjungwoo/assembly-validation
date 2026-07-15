@@ -5,7 +5,7 @@ State는 한 부품의 강체 자세(pose)를 나타낸다.
 - rotation: 이산적인 회전 각도 (x, y, z 축 순서). 각 성분은 {0, 90, 180, 270} 중 하나.
 
 회전 각도의 축 순서와 오일러 규약은 프로젝트 전체에서 다음으로 통일한다.
-    scipy 'xyz' extrinsic (고정 월드 축 기준, X -> Y -> Z 순서로 적용)
+    scipy 'XYZ' intrinsic (부품 자체 축 기준, X -> Y -> Z 순서로 적용)
     rotation[0] = X축 회전(roll)
     rotation[1] = Y축 회전(pitch)
     rotation[2] = Z축 회전(yaw)
@@ -71,7 +71,7 @@ class State:
         부동소수점 잡음을 제거해 충돌 검사와 직렬화의 재현성을 확보한다.
         """
         rotation_matrix = np.rint(
-            Rotation.from_euler("xyz", self.rotation, degrees=True).as_matrix()
+            Rotation.from_euler("XYZ", self.rotation, degrees=True).as_matrix()
         )
         # np.rint 은 -0.0 을 그대로 남긴다. -0.0 과 0.0 은 값은 같지만 직렬화
         # 바이트가 달라(msgpack 등) 재현성을 깨므로 +0.0 으로 통일한다.

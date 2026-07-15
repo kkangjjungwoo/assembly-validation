@@ -6,7 +6,9 @@ Action은 하나의 상태(State)를 다른 상태로 옮기는 단위 동작이
     translation -> [dx, dy, dz] 실수 이동량
     rotation    -> [rx, ry, rz] 각 축 회전각(90도의 배수)
 
-회전 규약은 state.py와 동일한 scipy 'xyz' extrinsic 규약을 사용한다.
+회전 규약은 state.py와 동일한 scipy 'XYZ' intrinsic 규약을 사용한다.
+(부품 자체 축 기준, X -> Y -> Z 순서로 적용)
+회전 중심은 부품의 무게 중심(center_mass)이며, 중심 좌표는 부품 로컬 좌표계 기준이다.
 (State에 Action을 적용해 다음 State를 계산하는 전이 로직은 planner가 담당한다.)
 """
 
@@ -74,20 +76,55 @@ class Action:
     def is_rotation(self) -> bool:
         return self.action_type is ActionType.ROTATION
 
-    def to_transformation_matrix(self) -> np.ndarray:
-        """이 동작을 4x4 동차 변환 행렬(변화량)로 반환한다.
+    def _to_origin_transformation_matrix(self) -> np.ndarray:
+        """이 동작을 부품 로컬 좌표계 '원점' 기준의 4x4 동차 변환 행렬로 반환한다.
 
-        주의: rotation 의 경우 이 행렬은 '월드 원점' 기준 순수 회전이며,
-        회전 중심(부품 자기 중심) 보정은 포함되어 있지 않다.
+        내부 헬퍼다. rotation 의 경우 회전 중심(부품 무게 중심) 보정이 포함되지
+        않은 순수 회전이므로 외부에서 직접 사용하지 않는다.
+        규약상 회전 중심은 부품 무게 중심이므로, 외부에서는 반드시
+        to_transformation_matrix_about() 를 사용한다.
         """
         transformation_matrix = np.eye(4)
         if self.is_translation():
             transformation_matrix[:3, 3] = self.value
         else:
             rotation_matrix = np.rint(
-                Rotation.from_euler("xyz", self.value, degrees=True).as_matrix()
+                Rotation.from_euler("XYZ", self.value, degrees=True).as_matrix()
             )
             # -0.0 을 0.0 으로 통일해 직렬화 재현성을 확보한다. (state.py 와 동일)
             rotation_matrix[rotation_matrix == 0.0] = 0.0
             transformation_matrix[:3, :3] = rotation_matrix
         return transformation_matrix
+
+    def to_transformation_matrix_about(
+        self, center: Tuple[float, float, float]
+    ) -> np.ndarray:
+        """이 동작을 중심점 center 기준의 4x4 동차 변환 행렬(변화량)로 반환한다.
+
+        rotation 의 경우 T(center) · R · T(-center) 로 중심 보정된 행렬을 반환하며,
+        center 점은 이 변환에 의해 움직이지 않는다(제자리 회전).
+        translation 의 경우 중심과 무관하므로 center 는 무시된다.
+
+        center 는 부품 로컬 좌표계 기준의 무게 중심 좌표다.
+        """
+        if len(center) != 3:
+            raise InvalidActionException(
+                f"center must contain exactly 3 coordinates, received {len(center)}"
+            )
+        try:
+            normalized_center = tuple(float(coordinate) for coordinate in center)
+        except (TypeError, ValueError) as error:
+            raise InvalidActionException(
+                f"center must contain numeric coordinates, received {center!r}"
+            ) from error
+
+        transformation_matrix = self._to_origin_transformation_matrix()
+        if self.is_translation():
+            return transformation_matrix
+
+        translation_to_center = np.eye(4)
+        translation_to_center[:3, 3] = normalized_center
+        translation_from_center = np.eye(4)
+        translation_from_center[:3, 3] = np.negative(normalized_center)
+
+        return translation_to_center @ transformation_matrix @ translation_from_center
