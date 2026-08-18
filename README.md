@@ -2,22 +2,25 @@
 ## Get Started
 ```
 conda env create -f environment.yml
+conda activate assembly-validation
+```
+## Run
+```
+python main.py step_path=<step_path.st*p> output_path=<output_path.msgpack>
 ```
 ## Code Structure
 ```
 ├── config/
-    ├── config.yaml : configuration file
+    ├── config.yaml
 ├── core/
-    ├── action.py : action class
-    ├── collision.py : collision detection module using trimesh
-    ├── planner.py : path planner module
-    ├── state.py : state class
+    ├── state.py
+    ├── action.py
+    ├── planner.py
+    ├── interference.py
 ├── data/
-    ├── exporter.py : result exporter module using msgpack
-    ├── loader.py : step loader and mesh converter using occwl and trimesh
-├── test/
-├── visualization/
-    ├── visualizer.py : result visualizer using PyVista or Open3D
+    ├── loader.py
+    ├── exporter.py
+├── pipeline.py
 ├── main.py
 ```
 ## Output Structure
@@ -26,14 +29,9 @@ conda env create -f environment.yml
     ├── step_path
     ├── global_bbox
 ├── solids
-    ├── 0
-        ├── mesh
-            ├── vertices
-            ├── faces
-        ├── state
-            ├── position
-            ├── rotation
-    ├── 1
+    ├── <id>
+        ├── name
+        ├── conversion
         ├── mesh
             ├── vertices
             ├── faces
@@ -41,15 +39,7 @@ conda env create -f environment.yml
             ├── position
             ├── rotation
 ├── trajectories
-    ├── 0
-        ├── solid
-        ├── state
-            ├── position
-            ├── rotation
-        ├── action
-            ├── type
-            ├── value
-    ├── 1
+    ├── <index>
         ├── solid
         ├── state
             ├── position

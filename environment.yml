@@ -8,7 +8,8 @@ dependencies:
   - pip:
     - numpy
     - tqdm
-    - trimesh[recommend]
+    - trimesh
+    - manifold3d
     - scipy
     - msgpack
     - hydra-core
