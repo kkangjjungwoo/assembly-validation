@@ -7,17 +7,6 @@ import { initServiceMode } from "./service_mode.js";
 const FRAME_DURATION_SECONDS = 1.0;
 const ALLOWED_ASSEMBLY_SUFFIXES = [".msgpack"];
 
-const ASSEMBLY_TARGETS = {
-  cleaner: {
-    button_id: "load-cleaner-assembly-button",
-    label: "Cleaner",
-  },
-  hair_dryer: {
-    button_id: "load-hair-dryer-assembly-button",
-    label: "Hair Dryer",
-  },
-};
-
 function getRequiredElement(element_id) {
   const element = document.getElementById(element_id);
   if (element === null) {
@@ -396,7 +385,6 @@ class ViewerDashboard {
     this._has_assembly_plan = false;
     this._selected_solid_index = null;
     this._is_slider_dragging = false;
-    this._pending_assembly_target = null;
     // [서비스 모드][나중에 삭제] service_mode.js 가 활성일 때 true
     this._is_service_mode = false;
 
@@ -421,7 +409,6 @@ class ViewerDashboard {
     this._export_button = getRequiredElement("export-button");
     this._load_assembly_button = getRequiredElement("load-assembly-button");
     this._assembly_file_input = getRequiredElement("assembly-file-input");
-    this._assembly_picker = getRequiredElement("debug-assembly-picker");
     // [서비스 모드][나중에 삭제]
     this._assemble_button = getRequiredElement("assemble-button");
 
@@ -726,22 +713,12 @@ class ViewerDashboard {
     });
   }
 
-  _setAssemblyPickerOpen(is_open) {
-    this._assembly_picker.classList.toggle("hidden", !is_open);
-    this._load_assembly_button.classList.toggle("is-picker-open", is_open);
-  }
-
-  async _loadAssemblyFromFile(file, assembly_target) {
+  async _loadAssemblyFromFile(file) {
     checkIsAssemblyFile(file);
-    const target_label = assembly_target?.label ?? "Assembly";
-    this._setViewerStatus(`${target_label}: ${file.name} 로드 중…`, true);
+    this._setViewerStatus(`${file.name} 로드 중…`, true);
     try {
       const assembly_result = await loadAssemblyFile(file);
-      this.bindAssembly(
-        assembly_result,
-        target_label.toLowerCase().replaceAll(" ", "-"),
-        true,
-      );
+      this.bindAssembly(assembly_result, file.name, true);
     } catch (error) {
       this.showError(error);
     }
@@ -759,36 +736,8 @@ class ViewerDashboard {
       );
     });
 
-    this._load_assembly_button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      this._setAssemblyPickerOpen(this._assembly_picker.classList.contains("hidden"));
-    });
-
-    Object.values(ASSEMBLY_TARGETS).forEach((assembly_target) => {
-      const target_button = getRequiredElement(assembly_target.button_id);
-      target_button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        this._pending_assembly_target = assembly_target;
-        this._setAssemblyPickerOpen(false);
-        this._assembly_file_input.click();
-      });
-    });
-
-    document.addEventListener("click", (event) => {
-      if (this._assembly_picker.classList.contains("hidden")) {
-        return;
-      }
-      const click_target = event.target;
-      if (!(click_target instanceof Node)) {
-        return;
-      }
-      if (
-        this._assembly_picker.contains(click_target) ||
-        this._load_assembly_button.contains(click_target)
-      ) {
-        return;
-      }
-      this._setAssemblyPickerOpen(false);
+    this._load_assembly_button.addEventListener("click", () => {
+      this._assembly_file_input.click();
     });
 
     this._assembly_file_input.addEventListener("change", async () => {
@@ -796,10 +745,8 @@ class ViewerDashboard {
       if (selected_files === null || selected_files.length === 0) {
         return;
       }
-      const assembly_target = this._pending_assembly_target;
-      this._pending_assembly_target = null;
       try {
-        await this._loadAssemblyFromFile(selected_files[0], assembly_target);
+        await this._loadAssemblyFromFile(selected_files[0]);
       } finally {
         this._assembly_file_input.value = "";
       }
@@ -829,7 +776,7 @@ class ViewerDashboard {
         return;
       }
       try {
-        await this._loadAssemblyFromFile(dropped_files[0], null);
+        await this._loadAssemblyFromFile(dropped_files[0]);
       } catch (error) {
         this.showError(error);
       }
