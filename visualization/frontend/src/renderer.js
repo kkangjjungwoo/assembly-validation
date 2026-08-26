@@ -291,6 +291,29 @@ export class AssemblyRenderer {
     return this._frame_duration_seconds;
   }
 
+  setFrameDurationSeconds(frame_duration_seconds) {
+    if (!(frame_duration_seconds > 0)) {
+      throw new AssemblyRenderException(
+        `frame_duration_seconds must be positive, received ${frame_duration_seconds}`,
+      );
+    }
+
+    const previous_duration = this._frame_duration_seconds;
+    const frame_progress =
+      previous_duration > 0 ? this._elapsed_seconds / previous_duration : 0;
+
+    if (this._playback_range_end_seconds !== null && previous_duration > 0) {
+      const range_end_in_frames =
+        this._playback_range_end_seconds / previous_duration;
+      this._playback_range_end_seconds =
+        range_end_in_frames * frame_duration_seconds;
+    }
+
+    this._frame_duration_seconds = frame_duration_seconds;
+    this._elapsed_seconds = frame_progress * frame_duration_seconds;
+    this._notifyFrameChange();
+  }
+
   isPlaying() {
     return this._is_playing;
   }

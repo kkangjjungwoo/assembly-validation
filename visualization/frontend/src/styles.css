@@ -172,6 +172,14 @@ input {
   place-items: center;
 }
 
+.btn-speed {
+  min-width: 48px;
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
 
 #workspace {
   display: grid;

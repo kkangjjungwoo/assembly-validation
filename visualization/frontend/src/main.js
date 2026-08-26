@@ -4,7 +4,16 @@ import { AssemblyRenderer, AssemblyRenderException } from "./renderer.js";
 // [서비스 모드][나중에 삭제]
 import { initServiceMode } from "./service_mode.js";
 
-const FRAME_DURATION_SECONDS = 1.0;
+const BASE_FRAME_DURATION_SECONDS = 1.0;
+const PLAYBACK_SPEED_MULTIPLIERS = [0.25, 0.5, 1, 2];
+
+function getFrameDurationForSpeed(speed_multiplier) {
+  return BASE_FRAME_DURATION_SECONDS / speed_multiplier;
+}
+
+function formatPlaybackSpeedLabel(speed_multiplier) {
+  return `${speed_multiplier}x`;
+}
 const ALLOWED_ASSEMBLY_SUFFIXES = [".msgpack"];
 
 function getRequiredElement(element_id) {
@@ -511,6 +520,7 @@ class ViewerDashboard {
     this._has_assembly_plan = false;
     this._selected_solid_index = null;
     this._is_slider_dragging = false;
+    this._playback_speed_multiplier = 1;
     // [서비스 모드][나중에 삭제] service_mode.js 가 활성일 때 true
     this._is_service_mode = false;
 
@@ -528,6 +538,7 @@ class ViewerDashboard {
     this._pause_button = getRequiredElement("pause-button");
     this._stop_button = getRequiredElement("stop-button");
     this._reset_view_button = getRequiredElement("reset-view-button");
+    this._playback_speed_button = getRequiredElement("playback-speed-button");
     this._timeline_slider = getRequiredElement("timeline-slider");
     this._playback_status = getRequiredElement("playback-status");
     this._frame_label = getRequiredElement("frame-label");
@@ -580,7 +591,7 @@ class ViewerDashboard {
       total_duration_seconds: 0,
       frame_count: 0,
       is_playing: false,
-      frame_duration_seconds: FRAME_DURATION_SECONDS,
+      frame_duration_seconds: this._assembly_renderer.getFrameDurationSeconds(),
     });
   }
 
@@ -597,14 +608,15 @@ class ViewerDashboard {
     this._assembly_renderer.loadAssembly(assembly_result);
     this._updateHeader(assembly_result, source_label);
     this._renderPartTree(assembly_result);
+    const frame_duration_seconds = this._assembly_renderer.getFrameDurationSeconds();
     this._syncPlaybackUi({
       playback_position: 0,
       playback_time_seconds: 0,
       total_duration_seconds:
-        assembly_result.trajectories.length * FRAME_DURATION_SECONDS,
+        assembly_result.trajectories.length * frame_duration_seconds,
       frame_count: assembly_result.trajectories.length,
       is_playing: false,
-      frame_duration_seconds: FRAME_DURATION_SECONDS,
+      frame_duration_seconds,
     });
   }
 
@@ -638,7 +650,7 @@ class ViewerDashboard {
       total_duration_seconds: 0,
       frame_count: 0,
       is_playing: false,
-      frame_duration_seconds: FRAME_DURATION_SECONDS,
+      frame_duration_seconds: this._assembly_renderer.getFrameDurationSeconds(),
     });
     this.showIdleMessage(idle_message);
   }
@@ -810,6 +822,25 @@ class ViewerDashboard {
         : "대기";
     this._play_button.disabled = is_playing || frame_count === 0;
     this._pause_button.disabled = !is_playing;
+    this._playback_speed_button.textContent = formatPlaybackSpeedLabel(
+      this._playback_speed_multiplier,
+    );
+    this._playback_speed_button.title =
+      `배속 ${formatPlaybackSpeedLabel(this._playback_speed_multiplier)}`;
+  }
+
+  _cyclePlaybackSpeed() {
+    const current_index = PLAYBACK_SPEED_MULTIPLIERS.indexOf(
+      this._playback_speed_multiplier,
+    );
+    const next_index =
+      current_index < 0
+        ? 0
+        : (current_index + 1) % PLAYBACK_SPEED_MULTIPLIERS.length;
+    this._playback_speed_multiplier = PLAYBACK_SPEED_MULTIPLIERS[next_index];
+    this._assembly_renderer.setFrameDurationSeconds(
+      getFrameDurationForSpeed(this._playback_speed_multiplier),
+    );
   }
 
   _bindPlaybackControls() {
@@ -825,6 +856,10 @@ class ViewerDashboard {
     this._reset_view_button.addEventListener("click", () => {
       this._assembly_renderer.resetCamera();
     });
+    this._playback_speed_button.addEventListener("click", () => {
+      this._cyclePlaybackSpeed();
+    });
+
     this._timeline_slider.addEventListener("pointerdown", () => {
       this._is_slider_dragging = true;
       this._assembly_renderer.pause();
@@ -911,7 +946,10 @@ class ViewerDashboard {
 
 async function main() {
   const viewport_element = getRequiredElement("viewport");
-  const assembly_renderer = new AssemblyRenderer(viewport_element, FRAME_DURATION_SECONDS);
+  const assembly_renderer = new AssemblyRenderer(
+    viewport_element,
+    BASE_FRAME_DURATION_SECONDS,
+  );
   const viewer_dashboard = new ViewerDashboard(assembly_renderer);
   viewer_dashboard.showIdleMessage("조립 결과 msgpack을 로드해 주세요");
   // [서비스 모드][나중에 삭제]
