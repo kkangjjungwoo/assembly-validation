@@ -237,13 +237,19 @@ def _get_solids_with_derived_initial_states(
                 field_name=f"trajectories[solid={part_index}].action",
             )
 
-        normalized_solids.append(
-            {
-                "mesh": mesh_entry,
-                "state": initial_state,
-                "part_index": part_index,
-            }
-        )
+        normalized_solid: dict[str, object] = {
+            "mesh": mesh_entry,
+            "state": initial_state,
+            "part_index": part_index,
+        }
+        solid_name = solid_entry.get("name")
+        if isinstance(solid_name, str) and solid_name.strip() != "":
+            normalized_solid["name"] = solid_name
+        elif solid_name is not None:
+            raise DummyExportException(
+                f"solids[{part_index}].name must be a non-empty string"
+            )
+        normalized_solids.append(normalized_solid)
 
     return normalized_solids
 

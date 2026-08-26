@@ -31,7 +31,12 @@ function getMovingSolidIndexSet(trajectories) {
   return new Set(trajectories.map((trajectory_frame) => trajectory_frame.solid));
 }
 
-function formatPartLabel(part_index) {
+function formatPartLabel(solid_entry, solid_index) {
+  const part_name = solid_entry?.name;
+  if (typeof part_name === "string" && part_name.trim() !== "") {
+    return part_name;
+  }
+  const part_index = getSolidPartIndex(solid_entry, solid_index);
   return `part_${String(part_index).padStart(2, "0")}`;
 }
 
@@ -284,10 +289,11 @@ class ViewerDashboard {
       color_swatch.className = "part-swatch";
       color_swatch.style.background = this._assembly_renderer.getSolidColorHex(solid_index);
 
+      const part_label = formatPartLabel(solid_entry, solid_index);
       const part_name = document.createElement("span");
       part_name.className = "part-name";
-      part_name.textContent = formatPartLabel(part_index);
-      part_name.title = formatPartLabel(part_index);
+      part_name.textContent = part_label;
+      part_name.title = part_label;
 
       let action_element = null;
       if (this._has_assembly_plan) {

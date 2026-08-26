@@ -206,11 +206,20 @@ function getSolidsWithDerivedInitialStates(solid_entries_with_keys, trajectories
       );
     }
 
-    return {
+    const normalized_solid = {
       mesh: mesh_entry,
       state: initial_state,
       part_index,
     };
+    const solid_name = solid_entry.name;
+    if (typeof solid_name === "string" && solid_name.trim() !== "") {
+      normalized_solid.name = solid_name;
+    } else if (solid_name !== undefined) {
+      throw new ResultLoadException(
+        `solids[${part_index}].name must be a non-empty string`,
+      );
+    }
+    return normalized_solid;
   });
 }
 

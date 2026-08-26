@@ -77,15 +77,27 @@ function getValidatedPartIndex(part_index_entry, solid_index) {
   return part_index_entry;
 }
 
+function getValidatedSolidName(name_entry, solid_index) {
+  if (name_entry === undefined) {
+    return undefined;
+  }
+  if (typeof name_entry !== "string" || name_entry.trim() === "") {
+    throw new ResultLoadException(
+      `solids[${solid_index}].name must be a non-empty string`,
+    );
+  }
+  return name_entry;
+}
+
 function getValidatedSolid(solid_entry, solid_index) {
   checkIsPlainObject(solid_entry, `solids[${solid_index}]`);
 
-  const { mesh, state, part_index: part_index_entry } = solid_entry;
+  const { mesh, state, part_index: part_index_entry, name: name_entry } = solid_entry;
   checkIsPlainObject(mesh, `solids[${solid_index}].mesh`);
   checkIsArray(mesh.vertices, `solids[${solid_index}].mesh.vertices`);
   checkIsArray(mesh.faces, `solids[${solid_index}].mesh.faces`);
 
-  return {
+  const validated_solid = {
     mesh: {
       vertices: mesh.vertices,
       faces: mesh.faces,
@@ -93,6 +105,11 @@ function getValidatedSolid(solid_entry, solid_index) {
     state: getValidatedState(state, `solids[${solid_index}].state`),
     part_index: getValidatedPartIndex(part_index_entry, solid_index),
   };
+  const solid_name = getValidatedSolidName(name_entry, solid_index);
+  if (solid_name !== undefined) {
+    validated_solid.name = solid_name;
+  }
+  return validated_solid;
 }
 
 function getValidatedTrajectoryFrame(trajectory_frame_entry, frame_index) {
