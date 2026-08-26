@@ -35,6 +35,25 @@ function formatPartLabel(solid_entry, solid_index) {
   return `part_${String(part_index).padStart(2, "0")}`;
 }
 
+function getConversionDisplay(conversion_entry) {
+  if (typeof conversion_entry !== "string" || conversion_entry.trim() === "") {
+    return {
+      text: "—",
+      class_name: "part-conversion is-missing",
+    };
+  }
+  if (conversion_entry === "성공") {
+    return {
+      text: conversion_entry,
+      class_name: "part-conversion is-success",
+    };
+  }
+  return {
+    text: conversion_entry,
+    class_name: "part-conversion is-failure",
+  };
+}
+
 function getSolidPartIndex(solid_entry, solid_index) {
   if (Number.isInteger(solid_entry?.part_index)) {
     return solid_entry.part_index;
@@ -249,6 +268,14 @@ function getSolidsWithDerivedInitialStates(solid_entries_with_keys, trajectories
     } else if (solid_name !== undefined) {
       throw new ResultLoadException(
         `solids[${part_index}].name must be a non-empty string`,
+      );
+    }
+    const solid_conversion = solid_entry.conversion;
+    if (typeof solid_conversion === "string" && solid_conversion.trim() !== "") {
+      normalized_solid.conversion = solid_conversion;
+    } else if (solid_conversion !== undefined) {
+      throw new ResultLoadException(
+        `solids[${part_index}].conversion must be a non-empty string`,
       );
     }
     return normalized_solid;
@@ -617,19 +644,17 @@ class ViewerDashboard {
         }
       }
 
-      const status_dot = document.createElement("span");
-      status_dot.className = moving_solid_indexes.has(solid_index)
-        ? "part-status is-moving"
-        : "part-status";
-      status_dot.title = moving_solid_indexes.has(solid_index)
-        ? "trajectory 포함"
-        : "정적 부품";
+      const conversion_display = getConversionDisplay(solid_entry.conversion);
+      const conversion_label = document.createElement("span");
+      conversion_label.className = conversion_display.class_name;
+      conversion_label.textContent = conversion_display.text;
+      conversion_label.title = `conversion: ${conversion_display.text}`;
 
       list_item.append(visibility_checkbox, color_swatch, part_name);
       if (action_element !== null) {
         list_item.append(action_element);
       }
-      list_item.append(status_dot);
+      list_item.append(conversion_label);
       list_item.addEventListener("click", () => {
         this._selectSolid(solid_index);
       });

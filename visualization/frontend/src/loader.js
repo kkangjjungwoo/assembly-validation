@@ -89,10 +89,28 @@ function getValidatedSolidName(name_entry, solid_index) {
   return name_entry;
 }
 
+function getValidatedSolidConversion(conversion_entry, solid_index) {
+  if (conversion_entry === undefined) {
+    return undefined;
+  }
+  if (typeof conversion_entry !== "string" || conversion_entry.trim() === "") {
+    throw new ResultLoadException(
+      `solids[${solid_index}].conversion must be a non-empty string`,
+    );
+  }
+  return conversion_entry;
+}
+
 function getValidatedSolid(solid_entry, solid_index) {
   checkIsPlainObject(solid_entry, `solids[${solid_index}]`);
 
-  const { mesh, state, part_index: part_index_entry, name: name_entry } = solid_entry;
+  const {
+    mesh,
+    state,
+    part_index: part_index_entry,
+    name: name_entry,
+    conversion: conversion_entry,
+  } = solid_entry;
   checkIsPlainObject(mesh, `solids[${solid_index}].mesh`);
   checkIsArray(mesh.vertices, `solids[${solid_index}].mesh.vertices`);
   checkIsArray(mesh.faces, `solids[${solid_index}].mesh.faces`);
@@ -108,6 +126,10 @@ function getValidatedSolid(solid_entry, solid_index) {
   const solid_name = getValidatedSolidName(name_entry, solid_index);
   if (solid_name !== undefined) {
     validated_solid.name = solid_name;
+  }
+  const solid_conversion = getValidatedSolidConversion(conversion_entry, solid_index);
+  if (solid_conversion !== undefined) {
+    validated_solid.conversion = solid_conversion;
   }
   return validated_solid;
 }

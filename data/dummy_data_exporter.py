@@ -249,6 +249,13 @@ def _get_solids_with_derived_initial_states(
             raise DummyExportException(
                 f"solids[{part_index}].name must be a non-empty string"
             )
+        solid_conversion = solid_entry.get("conversion")
+        if isinstance(solid_conversion, str) and solid_conversion.strip() != "":
+            normalized_solid["conversion"] = solid_conversion
+        elif solid_conversion is not None:
+            raise DummyExportException(
+                f"solids[{part_index}].conversion must be a non-empty string"
+            )
         normalized_solids.append(normalized_solid)
 
     return normalized_solids
