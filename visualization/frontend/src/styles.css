@@ -1,16 +1,17 @@
 :root {
-  --bg-app: #0b0f16;
-  --bg-panel: #121826;
-  --bg-panel-elevated: #182033;
-  --bg-hover: #1e2a40;
-  --border: #2a3548;
-  --text: #e8eef8;
-  --text-muted: #93a0b8;
-  --accent: #3d8bfd;
-  --accent-strong: #2f6fe0;
-  --success: #3ecf8e;
-  --danger: #ff5c70;
-  --warning: #f0b429;
+  /* 기본(Debug) 테마 — 조립 msgpack 시각화 */
+  --bg-app: #1a2333;
+  --bg-panel: #243044;
+  --bg-panel-elevated: #2d3c55;
+  --bg-hover: #3a4d6b;
+  --border: #4a5f80;
+  --text: #f5f8ff;
+  --text-muted: #c2d0e6;
+  --accent: #5aa2ff;
+  --accent-strong: #3d8bfd;
+  --success: #55e0a4;
+  --danger: #ff7b8c;
+  --warning: #ffc857;
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
   --font-ui: "IBM Plex Sans", "Noto Sans KR", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
@@ -53,7 +54,7 @@ input {
   column-gap: 24px;
   padding: 0 20px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, #151c2b 0%, #101826 100%);
+  background: linear-gradient(180deg, #2a3a52 0%, #1f2b40 100%);
 }
 
 .brand-block {
@@ -171,6 +172,7 @@ input {
   place-items: center;
 }
 
+
 #workspace {
   display: grid;
   grid-template-columns: 1fr var(--sidebar-width);
@@ -181,7 +183,7 @@ input {
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: #0d1320;
+  background: #1e2a3d;
 }
 
 #viewport {
@@ -201,11 +203,11 @@ input {
   top: 16px;
   z-index: 2;
   padding: 10px 12px;
-  border: 1px solid rgba(61, 139, 253, 0.25);
+  border: 1px solid rgba(90, 162, 255, 0.35);
   border-radius: 10px;
-  background: rgba(10, 14, 22, 0.72);
+  background: rgba(36, 48, 68, 0.88);
   backdrop-filter: blur(8px);
-  color: #b7c6df;
+  color: #d5e2f5;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.55;
@@ -221,10 +223,10 @@ input {
   max-width: min(720px, calc(100% - 48px));
   padding: 10px 18px;
   border-radius: 12px;
-  background: rgba(10, 14, 22, 0.78);
-  border: 1px solid rgba(61, 139, 253, 0.28);
+  background: rgba(36, 48, 68, 0.88);
+  border: 1px solid rgba(90, 162, 255, 0.45);
   backdrop-filter: blur(8px);
-  color: #e8eef8;
+  color: #f5f8ff;
   font-family: var(--font-ui);
   font-size: 20px;
   font-weight: 400;
@@ -255,7 +257,7 @@ input {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(14, 20, 32, 0.88);
+  background: rgba(36, 48, 68, 0.92);
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
 }
@@ -298,7 +300,105 @@ input {
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--border);
-  background: var(--bg-panel);
+  background: #223146;
+}
+
+/* Load Assembly (기본 Debug 화면) */
+.debug-sidebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.debug-sidebar-actions.hidden {
+  display: none;
+}
+
+
+.debug-load-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.debug-assembly-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: max(100%, 140px);
+  padding: 4px;
+  border: 1px solid rgba(90, 162, 255, 0.45);
+  border-radius: 10px;
+  background: #2d3c55;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.debug-assembly-picker.hidden {
+  display: none;
+}
+
+.debug-assembly-option {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: transparent;
+  color: #f5f8ff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.debug-assembly-option:hover {
+  background: rgba(90, 162, 255, 0.18);
+}
+
+#load-assembly-button.is-picker-open {
+  outline: 1px solid rgba(90, 162, 255, 0.55);
+}
+
+.sidebar-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.debug-bug {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(110, 207, 122, 0.12);
+  border: 1px solid rgba(110, 207, 122, 0.35);
+  animation: debug-bug-wiggle 2.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.debug-bug svg {
+  display: block;
+}
+
+@keyframes debug-bug-wiggle {
+  0%,
+  100% {
+    transform: rotate(-6deg) translateY(0);
+  }
+  50% {
+    transform: rotate(6deg) translateY(-1px);
+  }
 }
 
 .sidebar-section {

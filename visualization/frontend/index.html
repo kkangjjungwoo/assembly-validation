@@ -11,8 +11,8 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/src/styles.css" />
-    <!-- [디버그 모드][나중에 삭제] -->
-    <link rel="stylesheet" href="/src/debug_style.css" />
+    <!-- [서비스 모드][나중에 삭제] -->
+    <link rel="stylesheet" href="/src/service_style.css" />
   </head>
   <body>
     <div id="app">
@@ -22,10 +22,10 @@
         </div>
 
         <div class="header-summary">
-          <!-- [디버그 모드][나중에 삭제] 모드 토글: 정상 부품 왼쪽에 배치 -->
+          <!-- [서비스 모드][나중에 삭제] 모드 토글 -->
           <div class="mode-toggle" role="group" aria-label="Mode toggle">
-            <button id="service-mode-button" class="mode-toggle-button is-active" type="button">Service Mode</button>
-            <button id="debug-mode-button" class="mode-toggle-button" type="button">Debug Mode</button>
+            <button id="debug-mode-button" class="mode-toggle-button is-active" type="button">Debug Mode</button>
+            <button id="service-mode-button" class="mode-toggle-button" type="button">Service Mode</button>
           </div>
 
           <div class="summary-chip is-ok">
@@ -39,9 +39,9 @@
         </div>
 
         <div class="header-actions">
-          <!-- [디버그 모드][나중에 삭제] 중간 액션 슬롯(너비 고정으로 Export 위치 유지) -->
+          <!-- [서비스 모드][나중에 삭제] 중간 액션 슬롯(너비 고정으로 Export 위치 유지) -->
           <div class="header-action-slot">
-            <div id="service-actions" class="header-action-group">
+            <div id="service-actions" class="header-action-group hidden">
               <button id="open-button" class="btn" type="button">Load STEP</button>
               <button id="assemble-button" class="btn btn-primary" type="button" disabled>조립 계산</button>
             </div>
@@ -63,8 +63,8 @@
           </div>
           <div id="empty-state">
             <div>
-              <strong id="empty-state-title">STEP 파일이 없습니다</strong>
-              <span id="empty-state-body">STEP 파일을 로드하거나 이 영역으로 드래그하세요</span><br />
+              <strong id="empty-state-title">조립 결과가 없습니다</strong>
+              <span id="empty-state-body">조립 결과 msgpack을 로드하거나 이 영역으로 드래그하세요</span><br />
               <span id="empty-state-pipeline" style="opacity:0.75">파싱 — · 경로 계산 — · 충돌 —</span>
             </div>
           </div>
@@ -87,8 +87,7 @@
         </section>
 
         <aside id="sidebar">
-          <!-- [디버그 모드][나중에 삭제] Load Assembly: 조립 트리 위 중앙 -->
-          <div id="debug-actions" class="debug-sidebar-actions hidden">
+          <div id="debug-actions" class="debug-sidebar-actions">
             <div class="debug-load-wrap">
               <button id="load-assembly-button" class="btn btn-primary" type="button">Load Assembly</button>
               <div id="debug-assembly-picker" class="debug-assembly-picker hidden" role="menu" aria-label="Assembly target">
@@ -146,7 +145,7 @@
       </div>
     </div>
 
-    <div id="drop-overlay">Drop STEP file to process</div>
+    <div id="drop-overlay">Drop assembly msgpack</div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

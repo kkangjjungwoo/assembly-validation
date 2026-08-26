@@ -50,12 +50,12 @@ npm run dev
 │       ├── vite.config.js
 │       ├── public/
 │       └── src/
-│           ├── main.js : Load STEP / playback / part tree
+│           ├── main.js : Load Assembly / playback / part tree
 │           ├── loader.js : STEP upload + msgpack decode
 │           ├── renderer.js : Three.js scene and trajectory playback
 │           ├── styles.css
-│           ├── debug_mode.js : [debug] Service/Debug toggle + Load Assembly
-│           └── debug_style.css : [debug] debug theme / layout
+│           ├── service_mode.js : [service] Service/Debug toggle + Load STEP / 조립 계산
+│           └── service_style.css : [service] service theme / layout
 ├── environment.yml
 └── main.py
 ```

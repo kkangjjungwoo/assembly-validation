@@ -1,16 +1,22 @@
-import {
-  assembleStepFile,
-  loadStepFile,
-  ResultLoadException,
-} from "./loader.js";
+import { decode, encode } from "@msgpack/msgpack";
+import { decodeAssemblyResult, ResultLoadException } from "./loader.js";
 import { AssemblyRenderer, AssemblyRenderException } from "./renderer.js";
-// [디버그 모드][나중에 삭제]
-import { initDebugMode } from "./debug_mode.js";
+// [서비스 모드][나중에 삭제]
+import { initServiceMode } from "./service_mode.js";
 
-const LOAD_STEP_URL = "/api/load-step";
-const ASSEMBLE_URL = "/api/assemble";
 const FRAME_DURATION_SECONDS = 1.0;
-const ALLOWED_STEP_SUFFIXES = [".step", ".stp"];
+const ALLOWED_ASSEMBLY_SUFFIXES = [".msgpack"];
+
+const ASSEMBLY_TARGETS = {
+  cleaner: {
+    button_id: "load-cleaner-assembly-button",
+    label: "Cleaner",
+  },
+  hair_dryer: {
+    button_id: "load-hair-dryer-assembly-button",
+    label: "Hair Dryer",
+  },
+};
 
 function getRequiredElement(element_id) {
   const element = document.getElementById(element_id);
@@ -76,16 +82,308 @@ function getSolidIndexesInTrajectoryOrder(solids, trajectories) {
   return ordered_solid_indexes;
 }
 
-function checkIsStepFile(file) {
+function checkIsAssemblyFile(file) {
   const lowered_name = file.name.toLowerCase();
-  const has_allowed_suffix = ALLOWED_STEP_SUFFIXES.some((suffix) =>
+  const has_allowed_suffix = ALLOWED_ASSEMBLY_SUFFIXES.some((suffix) =>
     lowered_name.endsWith(suffix),
   );
   if (!has_allowed_suffix) {
     throw new ResultLoadException(
-      `STEP 파일(.step/.stp)만 로드할 수 있습니다: ${file.name}`,
+      `조립 결과(.msgpack)만 로드할 수 있습니다: ${file.name}`,
     );
   }
+}
+
+function getIndexedEntriesWithKeys(indexed_entries, field_name) {
+  // msgpack int-key map / list 모두 지원. 키(=파서 part_index)를 보존한다.
+  if (Array.isArray(indexed_entries)) {
+    return indexed_entries.map((entry, index) => ({
+      key: index,
+      entry,
+    }));
+  }
+  if (indexed_entries === null || typeof indexed_entries !== "object") {
+    throw new ResultLoadException(`${field_name} must be a list or int-keyed object`);
+  }
+
+  const sorted_keys = Object.keys(indexed_entries).sort(
+    (left_key, right_key) => Number(left_key) - Number(right_key),
+  );
+  return sorted_keys.map((key) => {
+    const part_index = Number(key);
+    if (!Number.isInteger(part_index) || part_index < 0) {
+      throw new ResultLoadException(
+        `${field_name} keys must be non-negative integers, received ${key}`,
+      );
+    }
+    return {
+      key: part_index,
+      entry: indexed_entries[key],
+    };
+  });
+}
+
+function getFlatGlobalBbox(global_bbox_entry) {
+  if (Array.isArray(global_bbox_entry)) {
+    if (global_bbox_entry.length !== 6) {
+      throw new ResultLoadException("global_bbox list must contain exactly 6 values");
+    }
+    return global_bbox_entry.map(Number);
+  }
+  if (global_bbox_entry === null || typeof global_bbox_entry !== "object") {
+    throw new ResultLoadException("global_bbox must be a list or {min, max} object");
+  }
+
+  const minimum_corner = global_bbox_entry.min;
+  const maximum_corner = global_bbox_entry.max;
+  if (!Array.isArray(minimum_corner) || !Array.isArray(maximum_corner)) {
+    throw new ResultLoadException("global_bbox.min and global_bbox.max must be lists");
+  }
+  if (minimum_corner.length !== 3 || maximum_corner.length !== 3) {
+    throw new ResultLoadException(
+      "global_bbox.min and global_bbox.max must each contain 3 values",
+    );
+  }
+  return [
+    Number(minimum_corner[0]),
+    Number(minimum_corner[1]),
+    Number(minimum_corner[2]),
+    Number(maximum_corner[0]),
+    Number(maximum_corner[1]),
+    Number(maximum_corner[2]),
+  ];
+}
+
+function getValidatedState(state_entry, field_name) {
+  if (state_entry === null || typeof state_entry !== "object") {
+    throw new ResultLoadException(`${field_name} must be an object`);
+  }
+  const { position, rotation } = state_entry;
+  if (!Array.isArray(position) || !Array.isArray(rotation)) {
+    throw new ResultLoadException(
+      `${field_name}.position and ${field_name}.rotation must be lists`,
+    );
+  }
+  if (position.length !== 3 || rotation.length !== 3) {
+    throw new ResultLoadException(
+      `${field_name}.position and ${field_name}.rotation must each contain 3 values`,
+    );
+  }
+  return {
+    position: position.map(Number),
+    rotation: rotation.map(Number),
+  };
+}
+
+function getStateBeforeAction(end_state, action_entry, field_name) {
+  if (action_entry === null || typeof action_entry !== "object") {
+    throw new ResultLoadException(`${field_name} must be an object`);
+  }
+  const action_type = action_entry.type;
+  const action_value = action_entry.value;
+  if (action_type !== "translation" && action_type !== "rotation") {
+    throw new ResultLoadException(
+      `${field_name}.type must be translation or rotation`,
+    );
+  }
+  if (!Array.isArray(action_value) || action_value.length !== 3) {
+    throw new ResultLoadException(`${field_name}.value must contain 3 values`);
+  }
+
+  const delta = action_value.map(Number);
+  if (action_type === "translation") {
+    return {
+      position: [
+        end_state.position[0] - delta[0],
+        end_state.position[1] - delta[1],
+        end_state.position[2] - delta[2],
+      ],
+      rotation: [...end_state.rotation],
+    };
+  }
+  return {
+    position: [...end_state.position],
+    rotation: [
+      end_state.rotation[0] - delta[0],
+      end_state.rotation[1] - delta[1],
+      end_state.rotation[2] - delta[2],
+    ],
+  };
+}
+
+function getSolidsWithDerivedInitialStates(solid_entries_with_keys, trajectories) {
+  const first_trajectory_by_part_index = new Map();
+  trajectories.forEach((trajectory_frame) => {
+    if (trajectory_frame === null || typeof trajectory_frame !== "object") {
+      throw new ResultLoadException("trajectory frame must be an object");
+    }
+    const part_index = trajectory_frame.solid;
+    if (!Number.isInteger(part_index)) {
+      throw new ResultLoadException("trajectory solid must be an integer");
+    }
+    if (!first_trajectory_by_part_index.has(part_index)) {
+      first_trajectory_by_part_index.set(part_index, trajectory_frame);
+    }
+  });
+
+  return solid_entries_with_keys.map(({ key: part_index, entry: solid_entry }) => {
+    if (solid_entry === null || typeof solid_entry !== "object") {
+      throw new ResultLoadException(`solids[${part_index}] must be an object`);
+    }
+    const mesh_entry = solid_entry.mesh;
+    const state_entry = solid_entry.state;
+    if (mesh_entry === null || typeof mesh_entry !== "object") {
+      throw new ResultLoadException(`solids[${part_index}].mesh must be an object`);
+    }
+
+    let initial_state = getValidatedState(state_entry, `solids[${part_index}].state`);
+    const first_trajectory = first_trajectory_by_part_index.get(part_index);
+    if (first_trajectory !== undefined) {
+      initial_state = getStateBeforeAction(
+        getValidatedState(
+          first_trajectory.state,
+          `trajectories[solid=${part_index}].state`,
+        ),
+        first_trajectory.action,
+        `trajectories[solid=${part_index}].action`,
+      );
+    }
+
+    const normalized_solid = {
+      mesh: mesh_entry,
+      state: initial_state,
+      part_index,
+    };
+    const solid_name = solid_entry.name;
+    if (typeof solid_name === "string" && solid_name.trim() !== "") {
+      normalized_solid.name = solid_name;
+    } else if (solid_name !== undefined) {
+      throw new ResultLoadException(
+        `solids[${part_index}].name must be a non-empty string`,
+      );
+    }
+    return normalized_solid;
+  });
+}
+
+function expandBboxWithSolidStates(global_bbox, solids) {
+  const expanded_bbox = [...global_bbox];
+  solids.forEach((solid_entry) => {
+    const position = solid_entry.state?.position;
+    if (!Array.isArray(position) || position.length !== 3) {
+      return;
+    }
+    for (let axis_index = 0; axis_index < 3; axis_index += 1) {
+      const offset = Number(position[axis_index]);
+      expanded_bbox[axis_index] = Math.min(
+        expanded_bbox[axis_index],
+        global_bbox[axis_index] + offset,
+      );
+      expanded_bbox[axis_index + 3] = Math.max(
+        expanded_bbox[axis_index + 3],
+        global_bbox[axis_index + 3] + offset,
+      );
+    }
+  });
+  return expanded_bbox;
+}
+
+function remapTrajectorySolidIndexes(trajectories, part_index_to_dense_index) {
+  // 렌더러는 dense array index를 쓰므로, 파서 part_index → dense index로 재매핑한다.
+  return trajectories.map((trajectory_frame, frame_index) => {
+    if (trajectory_frame === null || typeof trajectory_frame !== "object") {
+      throw new ResultLoadException(`trajectories[${frame_index}] must be an object`);
+    }
+    const part_index = trajectory_frame.solid;
+    if (!Number.isInteger(part_index)) {
+      throw new ResultLoadException(
+        `trajectories[${frame_index}].solid must be an integer`,
+      );
+    }
+    if (!part_index_to_dense_index.has(part_index)) {
+      throw new ResultLoadException(
+        `trajectories[${frame_index}].solid=${part_index} is missing from solids`,
+      );
+    }
+    return {
+      ...trajectory_frame,
+      solid: part_index_to_dense_index.get(part_index),
+    };
+  });
+}
+
+function normalizeAssemblyPayload(raw_payload) {
+  if (raw_payload === null || typeof raw_payload !== "object" || Array.isArray(raw_payload)) {
+    throw new ResultLoadException("assembly payload root must be an object");
+  }
+
+  const metadata_entry = raw_payload.metadata;
+  if (metadata_entry === null || typeof metadata_entry !== "object") {
+    throw new ResultLoadException("metadata must be an object");
+  }
+
+  const solid_entries_with_keys = getIndexedEntriesWithKeys(raw_payload.solids, "solids");
+  const trajectory_entries_with_keys = getIndexedEntriesWithKeys(
+    raw_payload.trajectories,
+    "trajectories",
+  );
+  const trajectories = trajectory_entries_with_keys.map(({ entry }) => entry);
+  let global_bbox = getFlatGlobalBbox(metadata_entry.global_bbox);
+  const normalized_solids = getSolidsWithDerivedInitialStates(
+    solid_entries_with_keys,
+    trajectories,
+  );
+  global_bbox = expandBboxWithSolidStates(global_bbox, normalized_solids);
+
+  const part_index_to_dense_index = new Map(
+    normalized_solids.map((solid_entry, dense_index) => [
+      solid_entry.part_index,
+      dense_index,
+    ]),
+  );
+  const remapped_trajectories = remapTrajectorySolidIndexes(
+    trajectories,
+    part_index_to_dense_index,
+  );
+
+  const step_path =
+    typeof metadata_entry.step_path === "string" && metadata_entry.step_path !== ""
+      ? metadata_entry.step_path
+      : "uploaded.msgpack";
+
+  return {
+    metadata: {
+      step_path,
+      global_bbox,
+    },
+    solids: normalized_solids,
+    trajectories: remapped_trajectories,
+  };
+}
+
+async function loadAssemblyFile(assembly_file) {
+  if (!(assembly_file instanceof Blob)) {
+    throw new ResultLoadException("selected input must be an assembly msgpack file");
+  }
+
+  let payload_bytes;
+  try {
+    payload_bytes = await assembly_file.arrayBuffer();
+  } catch (error) {
+    throw new ResultLoadException(`failed to read assembly file: ${error.message}`);
+  }
+
+  let raw_payload;
+  try {
+    raw_payload = decode(payload_bytes);
+  } catch (error) {
+    throw new ResultLoadException(
+      `failed to decode assembly msgpack: ${error.message}`,
+    );
+  }
+
+  const normalized_payload = normalizeAssemblyPayload(raw_payload);
+  return decodeAssemblyResult(encode(normalized_payload));
 }
 
 class ViewerDashboard {
@@ -98,6 +396,9 @@ class ViewerDashboard {
     this._has_assembly_plan = false;
     this._selected_solid_index = null;
     this._is_slider_dragging = false;
+    this._pending_assembly_target = null;
+    // [서비스 모드][나중에 삭제] service_mode.js 가 활성일 때 true
+    this._is_service_mode = false;
 
     this._viewer_status = getRequiredElement("viewer-status");
     this._summary_normal = getRequiredElement("summary-normal");
@@ -117,18 +418,31 @@ class ViewerDashboard {
     this._playback_status = getRequiredElement("playback-status");
     this._frame_label = getRequiredElement("frame-label");
     this._time_label = getRequiredElement("time-label");
-    this._open_button = getRequiredElement("open-button");
-    this._assemble_button = getRequiredElement("assemble-button");
     this._export_button = getRequiredElement("export-button");
-    this._file_input = getRequiredElement("file-input");
+    this._load_assembly_button = getRequiredElement("load-assembly-button");
+    this._assembly_file_input = getRequiredElement("assembly-file-input");
+    this._assembly_picker = getRequiredElement("debug-assembly-picker");
+    // [서비스 모드][나중에 삭제]
+    this._assemble_button = getRequiredElement("assemble-button");
 
     this._bindPlaybackControls();
-    this._bindFileControls();
+    this._bindAssemblyControls();
     this._assembly_renderer.setOnFrameChange((frame_state) => {
       this._syncPlaybackUi(frame_state);
     });
   }
 
+  // [서비스 모드][나중에 삭제]
+  setServiceMode(is_service_mode) {
+    this._is_service_mode = is_service_mode;
+  }
+
+  // [서비스 모드][나중에 삭제]
+  isServiceMode() {
+    return this._is_service_mode;
+  }
+
+  // [서비스 모드][나중에 삭제]
   bindParsedStep(loaded_step_result, source_label) {
     this._loaded_step_result = loaded_step_result;
     this._assembly_result = loaded_step_result;
@@ -163,6 +477,7 @@ class ViewerDashboard {
     this._has_assembly_plan = has_assembly_plan;
     this._selected_solid_index = null;
     this._empty_state.classList.add("hidden");
+    // [서비스 모드][나중에 삭제]
     this._assemble_button.disabled = this._loaded_step_filename === null;
     this._hideViewerStatus();
 
@@ -183,13 +498,12 @@ class ViewerDashboard {
   showIdleMessage(message) {
     this._hideViewerStatus();
     this._showEmptyState(
-      "STEP 파일이 없습니다",
+      "조립 결과가 없습니다",
       message,
       "파싱 — · 경로 계산 — · 충돌 —",
     );
   }
 
-  // [디버그 모드][나중에 삭제] 모드 전환 시 워크스페이스 초기화
   resetWorkspace(idle_message) {
     this._assembly_renderer.clearAssembly();
     this._part_tree.replaceChildren();
@@ -198,6 +512,7 @@ class ViewerDashboard {
     this._loaded_step_filename = null;
     this._has_assembly_plan = false;
     this._selected_solid_index = null;
+    // [서비스 모드][나중에 삭제]
     this._assemble_button.disabled = true;
     this._summary_normal.textContent = "0/0";
     this._summary_collision.textContent = "N/A";
@@ -358,6 +673,7 @@ class ViewerDashboard {
       total_duration_seconds,
       frame_count,
       is_playing,
+      frame_duration_seconds,
     } = frame_state;
 
     if (!this._is_slider_dragging) {
@@ -369,7 +685,7 @@ class ViewerDashboard {
       frame_count === 0 || playback_time_seconds <= 0
         ? 0
         : Math.min(
-            Math.ceil(playback_time_seconds / FRAME_DURATION_SECONDS),
+            Math.ceil(playback_time_seconds / frame_duration_seconds),
             frame_count,
           );
 
@@ -398,7 +714,6 @@ class ViewerDashboard {
     this._reset_view_button.addEventListener("click", () => {
       this._assembly_renderer.resetCamera();
     });
-
     this._timeline_slider.addEventListener("pointerdown", () => {
       this._is_slider_dragging = true;
       this._assembly_renderer.pause();
@@ -411,20 +726,28 @@ class ViewerDashboard {
     });
   }
 
-  _bindFileControls() {
-    this._open_button.addEventListener("click", () => {
-      this._file_input.click();
-    });
+  _setAssemblyPickerOpen(is_open) {
+    this._assembly_picker.classList.toggle("hidden", !is_open);
+    this._load_assembly_button.classList.toggle("is-picker-open", is_open);
+  }
 
-    this._assemble_button.addEventListener("click", async () => {
-      try {
-        await this.assembleLoadedStep();
-      } catch (error) {
-        this.showError(error);
-        this._assemble_button.disabled = this._loaded_step_filename === null;
-      }
-    });
+  async _loadAssemblyFromFile(file, assembly_target) {
+    checkIsAssemblyFile(file);
+    const target_label = assembly_target?.label ?? "Assembly";
+    this._setViewerStatus(`${target_label}: ${file.name} 로드 중…`, true);
+    try {
+      const assembly_result = await loadAssemblyFile(file);
+      this.bindAssembly(
+        assembly_result,
+        target_label.toLowerCase().replaceAll(" ", "-"),
+        true,
+      );
+    } catch (error) {
+      this.showError(error);
+    }
+  }
 
+  _bindAssemblyControls() {
     this._export_button.addEventListener("click", () => {
       if (this._assembly_result === null) {
         this._setViewerStatus("내보낼 조립 결과가 없습니다", false);
@@ -436,17 +759,49 @@ class ViewerDashboard {
       );
     });
 
-    this._file_input.addEventListener("change", async () => {
-      const selected_files = this._file_input.files;
+    this._load_assembly_button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this._setAssemblyPickerOpen(this._assembly_picker.classList.contains("hidden"));
+    });
+
+    Object.values(ASSEMBLY_TARGETS).forEach((assembly_target) => {
+      const target_button = getRequiredElement(assembly_target.button_id);
+      target_button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._pending_assembly_target = assembly_target;
+        this._setAssemblyPickerOpen(false);
+        this._assembly_file_input.click();
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      if (this._assembly_picker.classList.contains("hidden")) {
+        return;
+      }
+      const click_target = event.target;
+      if (!(click_target instanceof Node)) {
+        return;
+      }
+      if (
+        this._assembly_picker.contains(click_target) ||
+        this._load_assembly_button.contains(click_target)
+      ) {
+        return;
+      }
+      this._setAssemblyPickerOpen(false);
+    });
+
+    this._assembly_file_input.addEventListener("change", async () => {
+      const selected_files = this._assembly_file_input.files;
       if (selected_files === null || selected_files.length === 0) {
         return;
       }
+      const assembly_target = this._pending_assembly_target;
+      this._pending_assembly_target = null;
       try {
-        await this.loadFromStepFile(selected_files[0]);
-      } catch (error) {
-        this.showError(error);
+        await this._loadAssemblyFromFile(selected_files[0], assembly_target);
       } finally {
-        this._file_input.value = "";
+        this._assembly_file_input.value = "";
       }
     });
 
@@ -463,6 +818,10 @@ class ViewerDashboard {
       }
     });
     window.addEventListener("drop", async (event) => {
+      // [서비스 모드][나중에 삭제] 서비스 모드 drop 은 service_mode.js 가 처리
+      if (this._is_service_mode) {
+        return;
+      }
       event.preventDefault();
       document.body.classList.remove("is-dragging");
       const dropped_files = event.dataTransfer?.files;
@@ -470,60 +829,22 @@ class ViewerDashboard {
         return;
       }
       try {
-        await this.loadFromStepFile(dropped_files[0]);
+        await this._loadAssemblyFromFile(dropped_files[0], null);
       } catch (error) {
         this.showError(error);
       }
     });
   }
 
-  async loadFromStepFile(file) {
-    checkIsStepFile(file);
-    this._loaded_step_filename = file.name;
-    this._has_assembly_plan = false;
-    this._assemble_button.disabled = true;
-    this._assembly_renderer.clearAssembly();
-    this._part_tree.replaceChildren();
-    this._setViewerStatus(`${file.name} 파싱 중…`, true);
-    this._showEmptyState(
-      "STEP 파싱 중",
-      "잠시만 기다려 주세요",
-      "파싱 … · 경로 계산 — · 충돌 —",
-    );
-
-    try {
-      const loaded_step_result = await loadStepFile(file, LOAD_STEP_URL);
-      this.bindParsedStep(loaded_step_result, "step-loader");
-    } catch (error) {
-      this._assemble_button.disabled = true;
-      this._loaded_step_filename = null;
-      throw error;
-    }
-  }
-
-  async assembleLoadedStep() {
-    if (this._loaded_step_filename === null) {
-      throw new ResultLoadException("먼저 STEP 파일을 로드해 주세요");
-    }
-
-    this._assemble_button.disabled = true;
-    this._setViewerStatus(`${this._loaded_step_filename} 조립 계산 중…`, true);
-
-    const assembly_result = await assembleStepFile(
-      this._loaded_step_filename,
-      ASSEMBLE_URL,
-    );
-    this.bindAssembly(assembly_result, "dummy-output", true);
-  }
 }
 
 async function main() {
   const viewport_element = getRequiredElement("viewport");
   const assembly_renderer = new AssemblyRenderer(viewport_element, FRAME_DURATION_SECONDS);
   const viewer_dashboard = new ViewerDashboard(assembly_renderer);
-  viewer_dashboard.showIdleMessage("STEP 파일을 로드해 주세요");
-  // [디버그 모드][나중에 삭제]
-  initDebugMode(viewer_dashboard);
+  viewer_dashboard.showIdleMessage("조립 결과 msgpack을 로드해 주세요");
+  // [서비스 모드][나중에 삭제]
+  initServiceMode(viewer_dashboard);
 }
 
 main();
