@@ -52,6 +52,7 @@ class DummyDataExporter:
             "trajectories",
         )
         trajectories = [entry for _, entry in trajectory_entries_with_keys]
+        trajectories = _merge_colinear_trajectory_frames(trajectories)
         metadata_entry = raw_payload.get("metadata")
         if not isinstance(metadata_entry, dict):
             raise DummyExportException("sequence metadata must be an object")
@@ -166,6 +167,120 @@ def _get_indexed_entries_with_keys(
             )
         indexed_entries_with_keys.append((part_index, indexed_entries[key]))
     return indexed_entries_with_keys
+
+
+def _get_action_direction_key(action_entry: object, field_name: str) -> str:
+    if not isinstance(action_entry, dict):
+        raise DummyExportException(f"{field_name} must be an object")
+
+    action_type = action_entry.get("type")
+    action_value = action_entry.get("value")
+    if action_type not in {"translation", "rotation"}:
+        raise DummyExportException(
+            f"{field_name}.type must be translation or rotation, received {action_type!r}"
+        )
+    if not isinstance(action_value, list) or len(action_value) != 3:
+        raise DummyExportException(f"{field_name}.value must contain 3 values")
+
+    numeric_value = [float(component) for component in action_value]
+    magnitude = (
+        numeric_value[0] ** 2 + numeric_value[1] ** 2 + numeric_value[2] ** 2
+    ) ** 0.5
+    if magnitude < 1e-9:
+        return f"{action_type}:0,0,0"
+
+    direction_components = [
+        round(component / magnitude, 6) for component in numeric_value
+    ]
+    return (
+        f"{action_type}:{direction_components[0]},"
+        f"{direction_components[1]},{direction_components[2]}"
+    )
+
+
+def _merge_colinear_trajectory_frames(trajectories: list[object]) -> list[object]:
+    """
+    같은 solid + 같은 방향의 연속 trajectory를 한 프레임으로 합친다.
+    예: 오른쪽×3 + 뒷쪽×2 → 오른쪽 1프레임 + 뒷쪽 1프레임.
+    """
+    if len(trajectories) == 0:
+        return []
+
+    merged_trajectories: list[object] = []
+    run_start_index = 0
+
+    for frame_index in range(1, len(trajectories) + 1):
+        run_start_frame = trajectories[run_start_index]
+        if not isinstance(run_start_frame, dict):
+            raise DummyExportException(
+                f"trajectories[{run_start_index}] must be an object"
+            )
+
+        can_extend_run = False
+        if frame_index < len(trajectories):
+            next_frame = trajectories[frame_index]
+            if not isinstance(next_frame, dict):
+                raise DummyExportException(
+                    f"trajectories[{frame_index}] must be an object"
+                )
+            can_extend_run = (
+                next_frame.get("solid") == run_start_frame.get("solid")
+                and _get_action_direction_key(
+                    next_frame.get("action"),
+                    f"trajectories[{frame_index}].action",
+                )
+                == _get_action_direction_key(
+                    run_start_frame.get("action"),
+                    f"trajectories[{run_start_index}].action",
+                )
+            )
+
+        if can_extend_run:
+            continue
+
+        run_frames = trajectories[run_start_index:frame_index]
+        last_frame = run_frames[-1]
+        if not isinstance(last_frame, dict):
+            raise DummyExportException(
+                f"trajectories[{frame_index - 1}] must be an object"
+            )
+
+        merged_action_value = [0.0, 0.0, 0.0]
+        for run_frame in run_frames:
+            if not isinstance(run_frame, dict):
+                raise DummyExportException("trajectory frame must be an object")
+            action_entry = run_frame.get("action")
+            if not isinstance(action_entry, dict):
+                raise DummyExportException("trajectory action must be an object")
+            action_value = action_entry.get("value")
+            if not isinstance(action_value, list) or len(action_value) != 3:
+                raise DummyExportException("trajectory action.value must contain 3 values")
+            for axis_index in range(3):
+                merged_action_value[axis_index] += float(action_value[axis_index])
+
+        end_state = _get_validated_state(
+            last_frame.get("state"),
+            f"trajectories[{frame_index - 1}].state",
+        )
+        run_start_action = run_start_frame.get("action")
+        if not isinstance(run_start_action, dict):
+            raise DummyExportException(
+                f"trajectories[{run_start_index}].action must be an object"
+            )
+
+        merged_trajectories.append(
+            {
+                "solid": run_start_frame.get("solid"),
+                "state": end_state,
+                "action": {
+                    "type": run_start_action.get("type"),
+                    "value": merged_action_value,
+                },
+            }
+        )
+        run_start_index = frame_index
+
+    return merged_trajectories
 
 
 def _remap_trajectory_solid_indexes(

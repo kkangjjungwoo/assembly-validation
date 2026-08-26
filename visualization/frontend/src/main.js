@@ -328,6 +328,103 @@ function remapTrajectorySolidIndexes(trajectories, part_index_to_dense_index) {
   });
 }
 
+function getActionDirectionKey(action_entry, field_name) {
+  if (action_entry === null || typeof action_entry !== "object") {
+    throw new ResultLoadException(`${field_name} must be an object`);
+  }
+  const action_type = action_entry.type;
+  const action_value = action_entry.value;
+  if (action_type !== "translation" && action_type !== "rotation") {
+    throw new ResultLoadException(
+      `${field_name}.type must be translation or rotation`,
+    );
+  }
+  if (!Array.isArray(action_value) || action_value.length !== 3) {
+    throw new ResultLoadException(`${field_name}.value must contain 3 values`);
+  }
+
+  const numeric_value = action_value.map(Number);
+  const magnitude = Math.hypot(
+    numeric_value[0],
+    numeric_value[1],
+    numeric_value[2],
+  );
+  if (magnitude < 1e-9) {
+    return `${action_type}:0,0,0`;
+  }
+  const direction_components = numeric_value.map(
+    (component) => Math.round((component / magnitude) * 1e6) / 1e6,
+  );
+  return `${action_type}:${direction_components.join(",")}`;
+}
+
+/**
+ * 같은 solid + 같은 방향의 연속 trajectory를 한 프레임으로 합친다.
+ * 예: 오른쪽×3 + 뒷쪽×2 → 오른쪽 1프레임 + 뒷쪽 1프레임 (재생 5초 → 2초).
+ */
+function mergeColinearTrajectoryFrames(trajectories) {
+  if (trajectories.length === 0) {
+    return [];
+  }
+
+  const merged_trajectories = [];
+  let run_start_index = 0;
+
+  for (let frame_index = 1; frame_index <= trajectories.length; frame_index += 1) {
+    const run_start_frame = trajectories[run_start_index];
+    if (run_start_frame === null || typeof run_start_frame !== "object") {
+      throw new ResultLoadException(
+        `trajectories[${run_start_index}] must be an object`,
+      );
+    }
+
+    let can_extend_run = false;
+    if (frame_index < trajectories.length) {
+      const next_frame = trajectories[frame_index];
+      if (next_frame === null || typeof next_frame !== "object") {
+        throw new ResultLoadException(`trajectories[${frame_index}] must be an object`);
+      }
+      can_extend_run =
+        next_frame.solid === run_start_frame.solid &&
+        getActionDirectionKey(next_frame.action, `trajectories[${frame_index}].action`) ===
+          getActionDirectionKey(
+            run_start_frame.action,
+            `trajectories[${run_start_index}].action`,
+          );
+    }
+
+    if (can_extend_run) {
+      continue;
+    }
+
+    const run_frames = trajectories.slice(run_start_index, frame_index);
+    const last_frame = run_frames[run_frames.length - 1];
+    const merged_action_value = [0, 0, 0];
+    for (const run_frame of run_frames) {
+      const action_value = run_frame.action.value;
+      merged_action_value[0] += Number(action_value[0]);
+      merged_action_value[1] += Number(action_value[1]);
+      merged_action_value[2] += Number(action_value[2]);
+    }
+
+    const end_state = getValidatedState(
+      last_frame.state,
+      `trajectories[${frame_index - 1}].state`,
+    );
+    merged_trajectories.push({
+      solid: run_start_frame.solid,
+      state: end_state,
+      action: {
+        type: run_start_frame.action.type,
+        value: merged_action_value,
+      },
+    });
+    run_start_index = frame_index;
+  }
+
+  return merged_trajectories;
+}
+
 function normalizeAssemblyPayload(raw_payload) {
   if (raw_payload === null || typeof raw_payload !== "object" || Array.isArray(raw_payload)) {
     throw new ResultLoadException("assembly payload root must be an object");
@@ -343,7 +440,9 @@ function normalizeAssemblyPayload(raw_payload) {
     raw_payload.trajectories,
     "trajectories",
   );
-  const trajectories = trajectory_entries_with_keys.map(({ entry }) => entry);
+  const trajectories = mergeColinearTrajectoryFrames(
+    trajectory_entries_with_keys.map(({ entry }) => entry),
+  );
   let global_bbox = getFlatGlobalBbox(metadata_entry.global_bbox);
   const normalized_solids = getSolidsWithDerivedInitialStates(
     solid_entries_with_keys,
